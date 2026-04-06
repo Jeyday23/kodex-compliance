@@ -62,26 +62,24 @@ async def purchase_boost(
 async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
     """
     Stripe webhook — activates boosts after successful payment.
-    Verifies webhook signature in production.
+    Webhook signature is ALWAYS verified — no bypass.
     """
     payload = await request.body()
+    sig = request.headers.get("stripe-signature", "")
 
-    # Verify Stripe signature (skip in dev if no secret configured)
-    if settings.STRIPE_WEBHOOK_SECRET:
-        sig = request.headers.get("stripe-signature", "")
-        try:
-            event = stripe.Webhook.construct_event(payload, sig, settings.STRIPE_WEBHOOK_SECRET)
-        except (stripe.error.SignatureVerificationError, ValueError):
-            raise HTTPException(status_code=400, detail="Invalid webhook signature")
-    else:
-        import json
-        event = json.loads(payload)
+    if not settings.STRIPE_WEBHOOK_SECRET:
+        raise HTTPException(status_code=500, detail="Webhook secret not configured")
 
-    event_type = event.get("type") if isinstance(event, dict) else event["type"]
-    if event_type == "payment_intent.succeeded":
-        data = event.get("data", {}) if isinstance(event, dict) else event["data"]
-        intent = data.get("object", {})
-        intent_id = intent.get("id")
+    try:
+        event = stripe.Webhook.construct_event(payload, sig, settings.STRIPE_WEBHOOK_SECRET)
+    except stripe.error.SignatureVerificationError:
+        raise HTTPException(status_code=400, detail="Invalid webhook signature")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid payload")
+
+    if event["type"] == "payment_intent.succeeded":
+        intent = event["data"]["object"]
+        intent_id = intent["id"]
 
         # Find the purchase
         result = await db.execute(

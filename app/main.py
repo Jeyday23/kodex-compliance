@@ -12,19 +12,26 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api import auth, users, posts, boosts, engagement
 from app.api import prompts, conversations, notifications, verification, activity
+from app.config import get_settings
+
+settings = get_settings()  # validates secrets at import time
 
 app = FastAPI(
     title="VibeCrush API",
     version="0.2.0",
     description="Clout Mode — Video Dating Attention Marketplace",
+    docs_url=None if settings.STRIPE_SECRET_KEY else "/docs",  # hide docs in prod
+    redoc_url=None,
 )
+
+allowed_origins = [o.strip() for o in settings.ALLOWED_ORIGINS.split(",") if o.strip()]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 # Core routes
